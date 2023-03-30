@@ -186,9 +186,10 @@ class CubicSplineInterpolator(Interpolator):
                 part1 = (fgridj[i+1] -fgridj[i] )/(self.tx[i+1] - self.tx[i])/(self.tx[i+1]-self.tx[i-1])
                 part2 = (fgridj[i] -fgridj[i-1] )/(self.tx[i] - self.tx[i-1])/(self.tx[i+1]-self.tx[i-1])
                 d[i] = 6*(part1-part2)
-            d[0] = 2*-np.cos(1.5) #specific bc
-            d[-1] = 0
-            d[-1] = 2*-np.cos(1.5)*np.cos(2) #specific bc
+            #d[0] = 2*-np.cos(1.5) #specific bc
+            #d[-1] = 2*-np.cos(1.5)*np.cos(2) #specific bc
+            d[0] = 0 #natural splin
+            d[-1] = 0 #natural spline
             Mx[j] = lin.inv(self.Lx).dot(d)
         self.Mx=Mx
 
@@ -221,9 +222,10 @@ class CubicSplineInterpolator(Interpolator):
             part1 = (fgrid2[i+1] -fgrid2[i] )/(self.ty[i+1] - self.ty[i])/(self.ty[i+1]-self.ty[i-1])
             part2 = (fgrid2[i] -fgrid2[i-1] )/(self.ty[i] - self.ty[i-1])/(self.ty[i+1]-self.ty[i-1])
             d[i] = 6*(part1-part2)
-        d[0] = 2*-np.cos(1.5) #specific bc
-        d[-1] = 0
-        d[-1] = 2*-np.cos(1.5)*np.cos(2.5) #specific bc
+        #d[0] = 2*-np.cos(1.5) #specific bc
+        #d[-1] = 2*-np.cos(1.5)*np.cos(2.5) #specific bc
+        d[0] = 0 #natural spline
+        d[-1] = 0 #natural spline
         #self.d = d
         M = lin.inv(self.Ly).dot(d)
         self.M=M
@@ -256,5 +258,9 @@ def fxy(x,y):
 
 xgrid = [0,0.5,1,1.5,2]
 ygrid = [0,0.5,1,1.5,2, 2.5]
-#I = Interpolator(xgrid,ygrid,f,fx,fy,fxy)
-#I.interpolate(0.5,0.5)
+xgrid=np.arange(0,2,0.1)
+ygrid=np.arange(0,2.5,0.1)
+xtest,ytest = 0.85,0.75
+print("actual value =", f(xtest,ytest))
+I = CubicSplineInterpolator(xgrid,ygrid,f,fx,fy,fxy)
+print("Interp value = ",I.interpolate(xtest,ytest))
