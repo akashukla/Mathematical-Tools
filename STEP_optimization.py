@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import scipy as sc
 from scipy.integrate import quad
 from scipy.special import ellipk, ellipe
+import splines_modular as interp
 mu0 = 1.256e-6
 #mu0=1.
 MA=1e6
@@ -190,8 +191,8 @@ out = least_squares(func,x0=np.r_[Is[0:len(Is)//2],10*MA,50*MA] )
 
 
 
-Rgrid = np.arange(0,8,0.05)
-Zgrid = np.arange(-8.0,8.0,0.05)
+Rgrid = np.arange(0.06,8,0.05)
+Zgrid = np.arange(-8.01,8.0,0.05)
 #theta = np.arange(0,np.pi)
 psiplot = np.zeros((len(Rgrid), len(Zgrid)))
 
@@ -249,6 +250,7 @@ levels = [0,psisep]
 X,Y = np.meshgrid(Rgrid,Zgrid)
 fig, ax = plt.subplots()
 CS = ax.contour(X, Y, (psiplot).T,[psisep])#] levels = levels)
+CS = ax.contour(X, Y, (psiplot).T,[psisep-0.05])#] levels = levels)
 #ax.clabel(CS, inline=True, fontsize=10)#, levels = levels)
 #fig.colorbar(CS)
 ax.scatter(conpos[:,0],conpos[:,1], label = 'Control Points')
@@ -303,3 +305,11 @@ current_locations = np.row_stack((coilpos,poles,np.r_[a_mono,0], np.r_[a_mono,0]
 currents = np.r_[out.x[:-2],out.x[:-2], out.x[-2], -out.x[-2], out.x[-1], out.x[-1], -2*out.x[-1], I_mono ]
 current_array = np.column_stack((current_locations,currents))
 
+def psi_config_wrapped(R,Z):
+    return psi_config(R,Z,np.r_[out.x[:-2],out.x])
+
+#Now test the spline
+#xtest,ytest = 0.85,0.75
+#print("actual value =", psi_config_wrapped(xtest,ytest))
+#I = interp.CubicSplineInterpolator(Rgrid,Zgrid,psi_config_wrapped)
+#print("Interp value = ",I.interpolate(xtest,ytest))
