@@ -108,7 +108,7 @@ local YField = createField(confGrid,confBasis, 1)
 local ZField = createField(confGrid,confBasis, 1)
 evMap:advance(0.0,{},{mapField})
 separateComponents:advance(0, {mapField}, {XField,YField, ZField})
-metricCalc:advance(XField, YField, ZField, g11, g12, g13, g21, g22, g23, g31, g31, g33)
+metricCalc:advance(XField, YField, ZField, g11, g12, g13, g21, g22, g23, g31, g32, g33)
 
 local s = {}
 for i =1,3 do
