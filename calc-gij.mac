@@ -1,0 +1,149 @@
+load("modal-basis")$
+load("recovery")$
+load("nodal_operations/nodal_functions")$
+load(stringproc)$
+load("out-scripts")$
+
+ndim : 2 $
+polyOrder : 1$
+
+z : [x,y]$
+
+mkzlist(S,N) := makelist(S[i],i,0,N-1)$
+x1L_zl : mkzlist(x1L, 4)$
+x1R_zl : mkzlist(x1R, 4)$
+x1T_zl : mkzlist(x1T, 4)$
+x1B_zl : mkzlist(x1B, 4)$
+x1I_zl : mkzlist(x1I, 4)$
+
+x2L_zl : mkzlist(x2L, 4)$
+x2R_zl : mkzlist(x2R, 4)$
+x2T_zl : mkzlist(x2T, 4)$
+x2B_zl : mkzlist(x2B, 4)$
+x2I_zl : mkzlist(x2I, 4)$
+
+map(mksublst, [x1L, x1R, x1T, x1B, x1I, x2L, x2R, x2T, x2B, x2I])$
+
+/* xp[1,2] means recovery of xp[1] in direction 2 */
+
+xp[1,1] : calcRecov1CellGen("Ser", z[1], z, polyOrder, 1, dg(x1L_zl), dg(x1I_zl), dg(x1R_zl))$
+xp[2,1] : calcRecov1CellGen("Ser", z[1], z, polyOrder, 1, dg(x2L_zl), dg(x2I_zl), dg(x2R_zl))$
+/*x1I is expansion coeffs of X component of mapc2p, x2I is expansion coeffs of Y component*/
+
+xp[1,2] : calcRecov1CellGen("Ser", z[2], z, polyOrder, 1, dg(x1B_zl), dg(x1I_zl), dg(x1T_zl))$
+xp[2,2] : calcRecov1CellGen("Ser", z[2], z, polyOrder, 1, dg(x2B_zl), dg(x2I_zl), dg(x2T_zl))$
+
+/* Function to compute metric */
+calcMetric(i,j) := sum(
+  diff(xp[k,i],z[i])*diff(xp[k,j],z[j]), k, 1, ndim
+  )$
+
+g[1,1] : calcMetric(1,1)$
+g[1,2] : calcMetric(1,2)$
+g[2,1] : calcMetric(2,1)$
+g[2,2] : calcMetric(2,2)$
+
+/* Get nodes and nodal basis */
+evNodes : getNodes("Ser", 2, polyOrder)$
+nodalBasis : getNodalBasisWithNodes("Ser", 2, polyOrder, evNodes)$
+N2M : calcNodToModWithNodes("Ser", 2, polyOrder, evNodes)$
+
+calcModCoeff(gij) := expand(
+  N2M. transpose(
+    makelist(
+      subst([x=evNodes[k][1],y=evNodes[k][2]], gij),
+      k, 1, length(evNodes)
+      )
+    )
+  )$
+
+/*for k : 1 thru length(evNodes) do (
+  gmc[1,1,i] : expand( calcModCoeff(g[1,1])[i][1])
+  gmc[1,1,i] : expand( calcModCoeff(g[1,1])[i])
+)$*/
+
+/*Store gij modal coeffs in gmc*/
+for i : 1 thru 2 do (
+  for j : 1 thru 2 do (
+    for k : 1 thru 4 do (
+      gmc[i,j,k] : expand( calcModCoeff(g[i,j])[k])
+    )
+  )
+);
+
+/* Now we also want to store the xps because I want to check what it looks like*/
+for i : 1 thru 2 do (
+  for j : 1 thru 2 do (
+    for k : 1 thru 4 do (
+      xpmc[i,j,k] : expand( calcModCoeff(xp[i,j])[k])
+    )
+  )
+);
+
+xp11list:makelist(xpmc[1,1,i][1],i,1,4);
+xp12list:makelist(xpmc[1,2,i][1],i,1,4);
+xp21list:makelist(xpmc[2,1,i][1],i,1,4);
+xp22list:makelist(xpmc[2,2,i][1],i,1,4);
+xp11list: subst ("^"=lambda([a, b], pow(a, b)), float(xp11list));
+xp12list: subst ("^"=lambda([a, b], pow(a, b)), float(xp12list));
+xp21list: subst ("^"=lambda([a, b], pow(a, b)), float(xp21list));
+xp22list: subst ("^"=lambda([a, b], pow(a, b)), float(xp22list));
+/*End xp block*/
+
+/*Separate out gij into own lists because otherwise I can't get the indexing to work when I write the c expressions*/
+/*Get rid of pesky [] around the expressions by taking [1]*/
+g11list:makelist(gmc[1,1,i][1],i,1,4);
+g12list:makelist(gmc[1,2,i][1],i,1,4);
+g21list:makelist(gmc[2,1,i][1],i,1,4);
+g22list:makelist(gmc[2,2,i][1],i,1,4);
+
+
+
+
+/*Now write the cpp file*/
+fh : openw("calc_gij.cpp");
+printf(fh, "~%");
+printf(fh, "#include \"calc_gij_mod_decl.h\"~%~%");
+printf(fh, "#include \<cmath\>~%~%");
+/*For only calculating gs*/
+/*printf(fh, "void gij_~ax_~a_p~a(const double *x1L, const double *x1I, const double *x1R, const double *x2L, const double *x2I, const double *x2R, const double *x1B, const double *x1T, const double *x2B, const double *x2T, double *g11, double *g12, double *g21, double *g22) ~%{ ~%", 2, Ser, 1);*/
+
+/*For only calculating gs and xps*/
+printf(fh, "void gij_~ax_~a_p~a(const double *x1L, const double *x1I, const double *x1R, const double *x2L, const double *x2I, const double *x2R, const double *x1B, const double *x1T, const double *x2B, const double *x2T, double *g11, double *g12, double *g21, double *g22, double *xp11, double *xp12, double *xp21, double *xp22) ~%{ ~%", 2, Ser, 1);
+
+/*Get rid of ^ */
+g11list: subst ("^"=lambda([a, b], pow(a, b)), float(g11list));
+g12list: subst ("^"=lambda([a, b], pow(a, b)), float(g12list));
+g21list: subst ("^"=lambda([a, b], pow(a, b)), float(g21list));
+g22list: subst ("^"=lambda([a, b], pow(a, b)), float(g22list));
+
+/*write out the metrics*/
+writeCExprs1(g11, g11list);
+printf(fh, "~%");
+
+writeCExprs1(g12, g12list);
+printf(fh, "~%");
+
+writeCExprs1(g21, g21list);
+printf(fh, "~%");
+
+writeCExprs1(g22, g22list);
+printf(fh, "~%");
+
+
+/*write out the xps*/
+writeCExprs1(xp11, xp11list);
+printf(fh, "~%");
+
+writeCExprs1(xp12, xp12list);
+printf(fh, "~%");
+
+writeCExprs1(xp21, xp21list);
+printf(fh, "~%");
+
+writeCExprs1(xp22, xp22list);
+printf(fh, "~%");
+
+
+printf(fh, " ~%");
+printf(fh, "}~%");

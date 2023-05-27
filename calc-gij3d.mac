@@ -1,0 +1,186 @@
+load("modal-basis")$
+load("recovery")$
+load("nodal_operations/nodal_functions")$
+load(stringproc)$
+load("out-scripts")$
+
+ndim : 3 $
+polyOrder : 1$
+
+z : [x,y,l]$
+
+mkzlist(S,N) := makelist(S[i],i,0,N-1)$
+x1L_zl : mkzlist(x1L, (polyOrder+1)^ndim)$
+x1R_zl : mkzlist(x1R, (polyOrder+1)^ndim)$
+x1T_zl : mkzlist(x1T, (polyOrder+1)^ndim)$
+x1B_zl : mkzlist(x1B, (polyOrder+1)^ndim)$
+x1I_zl : mkzlist(x1I, (polyOrder+1)^ndim)$
+x1D_zl : mkzlist(x1D, (polyOrder+1)^ndim)$
+x1U_zl : mkzlist(x1U, (polyOrder+1)^ndim)$
+
+x2L_zl : mkzlist(x2L, (polyOrder+1)^ndim)$
+x2R_zl : mkzlist(x2R, (polyOrder+1)^ndim)$
+x2T_zl : mkzlist(x2T, (polyOrder+1)^ndim)$
+x2B_zl : mkzlist(x2B, (polyOrder+1)^ndim)$
+x2I_zl : mkzlist(x2I, (polyOrder+1)^ndim)$
+x2D_zl : mkzlist(x2D, (polyOrder+1)^ndim)$
+x2U_zl : mkzlist(x2U, (polyOrder+1)^ndim)$
+
+x3L_zl : mkzlist(x3L, (polyOrder+1)^ndim)$
+x3R_zl : mkzlist(x3R, (polyOrder+1)^ndim)$
+x3T_zl : mkzlist(x3T, (polyOrder+1)^ndim)$
+x3B_zl : mkzlist(x3B, (polyOrder+1)^ndim)$
+x3I_zl : mkzlist(x3I, (polyOrder+1)^ndim)$
+x3D_zl : mkzlist(x3D, (polyOrder+1)^ndim)$
+x3U_zl : mkzlist(x3U, (polyOrder+1)^ndim)$
+
+map(mksublst, [x1L, x1R, x1T, x1B, x1I, x1U, x1D, x2L, x2R, x2T, x2B, x2I, x2U, x2D, x3L, x3R, x3T, x3B, x3I, x3U, x3D])$
+
+/* xp[1,2] means recovery of xp[1] in direction 2 */
+
+disp("doing recovery");
+
+xp[1,1] : calcRecov1CellGen("Ser", z[1], z, polyOrder, 1, dg(x1L_zl), dg(x1I_zl), dg(x1R_zl))$
+xp[2,1] : calcRecov1CellGen("Ser", z[1], z, polyOrder, 1, dg(x2L_zl), dg(x2I_zl), dg(x2R_zl))$
+xp[3,1] : calcRecov1CellGen("Ser", z[1], z, polyOrder, 1, dg(x3L_zl), dg(x3I_zl), dg(x3R_zl))$
+/*x1I is expansion coeffs of X component of mapc2p, x2I is expansion coeffs of Y component*/
+
+xp[1,2] : calcRecov1CellGen("Ser", z[2], z, polyOrder, 1, dg(x1B_zl), dg(x1I_zl), dg(x1T_zl))$
+xp[2,2] : calcRecov1CellGen("Ser", z[2], z, polyOrder, 1, dg(x2B_zl), dg(x2I_zl), dg(x2T_zl))$
+xp[3,2] : calcRecov1CellGen("Ser", z[2], z, polyOrder, 1, dg(x3B_zl), dg(x3I_zl), dg(x3T_zl))$
+
+
+xp[1,3] : calcRecov1CellGen("Ser", z[3], z, polyOrder, 1, dg(x1D_zl), dg(x1I_zl), dg(x1U_zl))$
+xp[2,3] : calcRecov1CellGen("Ser", z[3], z, polyOrder, 1, dg(x2D_zl), dg(x2I_zl), dg(x2U_zl))$
+xp[3,3] : calcRecov1CellGen("Ser", z[3], z, polyOrder, 1, dg(x3D_zl), dg(x3I_zl), dg(x3U_zl))$
+
+/* Function to compute metric */
+calcMetric(i,j) := sum(
+  diff(xp[k,i],z[i])*diff(xp[k,j],z[j]), k, 1, ndim
+  )$
+
+disp("calculating metrics");
+
+g[1,1] : calcMetric(1,1)$
+g[1,2] : calcMetric(1,2)$
+g[1,3] : calcMetric(1,3)$
+g[2,1] : calcMetric(2,1)$
+g[2,2] : calcMetric(2,2)$
+g[2,3] : calcMetric(2,3)$
+g[3,1] : calcMetric(3,1)$
+g[3,2] : calcMetric(3,2)$
+g[3,3] : calcMetric(3,3)$
+disp("calculated one metric");
+
+/* Get nodes and nodal basis */
+evNodes : getNodes("Ser", ndim, polyOrder)$
+nodalBasis : getNodalBasisWithNodes("Ser", ndim, polyOrder, evNodes)$
+N2M : calcNodToModWithNodes("Ser", ndim, polyOrder, evNodes)$
+
+calcModCoeff(gij) := expand(
+  N2M. transpose(
+    makelist(
+      subst([x=evNodes[k][1],y=evNodes[k][2], l=evNodes[k][3]], gij),
+      k, 1, length(evNodes)
+      )
+    )
+  )$
+  
+
+
+disp("convertig to modal");
+/*Store gij modal coeffs in gmc*/
+for i : 1 thru 3 do (
+  for j : 1 thru 3 do (
+     disp(i,j),
+     temp : calcModCoeff(g[i,j]),
+     for k : 1 thru length(evNodes) do(
+      /*gmc[i,j,k] : calcModCoeff(g[i,j])[k]*/
+      disp("expanding"),
+      gmc[i,j,k] : expand(temp[k]),
+      disp(k),
+      disp("done expanding")
+      /*temp:calcModCoeff(g[i,j]),
+      gmc[i,j] : makelist(temp[k], k, 1, length(evNodes) )*/
+      ),
+      kill(temp)
+  )
+);
+
+/*Separate out gij into own lists because otherwise I can't get the indexing to work when I write the c expressions*/
+/*Get rid of pesky [] around the expressions by taking [1]*/
+/*disp("stripping");
+for i : 1 thru 3 do (
+  for j : 1 thru 3 do (
+     gmcstripped[i,j] : subst ("^"=lambda([a, b], pow(a, b)), gmc[i,j])
+  )
+);*/
+
+/*Separate out gij into own lists because otherwise I can't get the indexing to work when I write the c expressions*/
+/*Get rid of pesky [] around the expressions by taking [1]*/
+disp("making lists");
+g11list:makelist(gmc[1,1,i][1],i,1,length(evNodes));
+g12list:makelist(gmc[1,2,i][1],i,1,length(evNodes));
+g13list:makelist(gmc[1,3,i][1],i,1,length(evNodes));
+g21list:makelist(gmc[2,1,i][1],i,1,length(evNodes));
+g22list:makelist(gmc[2,2,i][1],i,1,length(evNodes));
+g23list:makelist(gmc[2,3,i][1],i,1,length(evNodes));
+g31list:makelist(gmc[3,1,i][1],i,1,length(evNodes));
+g32list:makelist(gmc[3,2,i][1],i,1,length(evNodes));
+g33list:makelist(gmc[3,3,i][1],i,1,length(evNodes));
+
+
+disp("stripping");
+g11list: subst ("^"=lambda([a, b], pow(a, b)), float(g11list));
+g12list: subst ("^"=lambda([a, b], pow(a, b)), float(g12list));
+g13list: subst ("^"=lambda([a, b], pow(a, b)), float(g13list));
+g21list: subst ("^"=lambda([a, b], pow(a, b)), float(g21list));
+g22list: subst ("^"=lambda([a, b], pow(a, b)), float(g22list));
+g23list: subst ("^"=lambda([a, b], pow(a, b)), float(g23list));
+g31list: subst ("^"=lambda([a, b], pow(a, b)), float(g31list));
+g32list: subst ("^"=lambda([a, b], pow(a, b)), float(g32list));
+g33list: subst ("^"=lambda([a, b], pow(a, b)), float(g33list));
+disp("done stripping");
+
+/*Now write the cpp file*/
+fh : openw("calc_gij3d.cpp");
+printf(fh, "~%");
+printf(fh, "#include \"calc_gij3d_mod_decl.h\"~%~%");
+printf(fh, "#include \<cmath\>~%~%");/*Get rid of ^ */
+
+
+
+printf(fh, "void gij_~ax_~a_p~a( const double *x1I, const double *x1L, const double *x1R, const double *x1B, const double *x1T, const double *x1D, const double *x1U, const double *x2I, const double *x2L, const double *x2R, const double *x2B, const double *x2T, const double *x2D, const double *x2U, const double *x3I, const double *x3L, const double *x3R, const double *x3B, const double *x3T, const double *x3D, const double *x3U, double *g11, double *g12, double *g13, double *g21, double *g22, double *g23, double *g31, double *g32, double *g33) ~%{ ~%", ndim, Ser, polyOrder);
+
+/*write out the metrics*/
+
+disp("writing c");
+/*write out the metrics*/
+writeCExprs1(g11, g11list);
+printf(fh, "~%");
+writeCExprs1(g12, g12list);
+printf(fh, "~%");
+writeCExprs1(g13, g13list);
+printf(fh, "~%");
+
+disp("wrote 1s");
+
+writeCExprs1(g21, g21list);
+printf(fh, "~%");
+writeCExprs1(g22, g22list);
+printf(fh, "~%");
+writeCExprs1(g23, g23list);
+printf(fh, "~%");
+disp("wrote 2s");
+
+writeCExprs1(g31, g31list);
+printf(fh, "~%");
+writeCExprs1(g32, g32list);
+printf(fh, "~%");
+writeCExprs1(g33, g33list);
+printf(fh, "~%");
+disp("wrote 3s");
+
+
+printf(fh, " ~%");
+printf(fh, "}~%");
