@@ -1,5 +1,4 @@
-local Grid      = require("Grid")
-local AdiosCartFieldIo = require "Io.AdiosCartFieldIo"
+local Plasma    = (require "App.PlasmaOnCartGrid").Gyrokinetic()
 local math      = require("sci.math").generic
 local diff      = require("sci.diff-recursive")
 local df        = diff.df
@@ -9,20 +8,26 @@ local Time=require("Lib.Time")
 local DataStruct = require("DataStruct")
 local Updater = require("Updater")
 local calc_gij = require("Updater.calc_gij3d")
+local PopApp = require "App.Species.Population"
+local Messenger = require "Comm.Messenger"
 
 
 
 
-
--- Boundary conditions for configuration space.
---local periodicDirs = {2}     -- Periodic in y only.
 
 -- Setup configuration space grid.
-
-
 local lower       = {0.5, -math.pi/2., 0.} -- Configuration space lower left.
 local upper       = {1.0 , math.pi/2., math.pi/2.}    -- Configuration space upper right.
 local cells       = {xcells , ycells, zcells}                 -- Configuration space cells.
+local basisNm       = "serendipity"            -- One of "serendipity" or "maximal-order".
+local polyOrder   = 1                        -- Polynomial order.
+local decompCuts = {1, 1, 1}
+--local periodicDirs = {2}     -- Periodic in y only.
+local commManager = Messenger{
+   cells = cells,   decompCutsConf = decompCuts,
+}
+local population = PopApp{ messenger = commManager }
+
 
 print("running with %d cells", xcells)
 
@@ -42,15 +47,17 @@ local gij = function(xc)
           0., 0., r^2*math.sin(theta)^2
 end
 
+
 local GridConstructor = Grid.MappedCart
 local confGrid = GridConstructor {
-   lower = lower,     --decomposition = commManager:getConfDecomp(),
-   upper = upper,     --mappings = tbl.coordinateMap,
-   cells = cells,     mapc2p = mapc2p,
+   lower = lower,
+   decomposition = commManager:getConfDecomp(),
+   upper = upper,
+   cells = cells,
+   mapc2p = mapc2p,
    periodicDirs = periodicDirs,
 }
-local basisNm       = "serendipity"            -- One of "serendipity" or "maximal-order".
-local polyOrder   = 1                        -- Polynomial order.
+
 local function createBasis(nm, ndim, polyOrder)
    if nm == "serendipity" then
       return Basis.CartModalSerendipity { ndim = ndim, polyOrder = polyOrder }
@@ -68,7 +75,6 @@ local function createField(grid, basis, vComp)
       onGrid        = grid,
       numComponents = basis:numBasis()*vComp,
       ghost         = {1, 1},
-      syncPeriodicDirs = true,
       metaData      = {polyOrder = basis:polyOrder(),
                        basisType = basis:id(),},
    }
@@ -76,7 +82,7 @@ local function createField(grid, basis, vComp)
 end
 
 
---First lets calculate the approximate gs
+--First lets calculate the approximate gs (Recovered)
 local evMap = Updater.EvalOnNodes {
    onGrid = confGrid,
    evaluate = function (t,xn) return mapc2p(xn) end,
@@ -108,7 +114,7 @@ local YField = createField(confGrid,confBasis, 1)
 local ZField = createField(confGrid,confBasis, 1)
 evMap:advance(0.0,{},{mapField})
 separateComponents:advance(0, {mapField}, {XField,YField, ZField})
-metricCalc:advance(XField, YField, ZField, g11, g12, g13, g21, g22, g23, g31, g32, g33)
+metricCalc:advance(XField, YField, ZField, g11, g12, g13, g21, g22, g23, g31, g31, g33)
 
 local s = {}
 for i =1,3 do
@@ -128,6 +134,40 @@ g23:scale(s[2][3])
 g31:scale(s[3][1])
 g32:scale(s[3][2])
 g33:scale(s[3][3])
+
+--Now the approximate fields from the original method (AD)
+local geoField = Plasma.Geometry {
+   bmag = function (t, xn)
+      return 2.0 -- unimportant, not used
+   end,
+   -- Geometry is not time-dependent.
+   evolve = false,
+   tEnd=0.,
+   nFrame=1,
+}
+
+local ioMethod="MPI"
+geoField:fullInit(geoField.tbl) -- Complete initialization.
+print("did full init")
+geoField:setIoMethod(ioMethod)
+geoField:setBasis(confBasis)
+geoField:setGrid(confGrid)
+geoField:alloc(1)--timeStepper.numFields)
+geoField:createDiagnostics()
+geoField:createSolver(population)
+geoField:initField()
+
+local g11ad = geoField.geo.g_xx
+local g12ad = geoField.geo.g_xy
+local g13ad = geoField.geo.g_xz
+local g21ad = geoField.geo.g_xy
+local g22ad = geoField.geo.g_yy
+local g23ad = geoField.geo.g_yz
+local g31ad = geoField.geo.g_xz
+local g32ad = geoField.geo.g_yz
+local g33ad = geoField.geo.g_zz
+
+
 
 
 --Now the exact fields
@@ -157,6 +197,7 @@ separateComponents:advance(0, {metricField}, {g11exact,g12exact,g13exact,g21exac
 
 
 glist = {g11, g22,g33}
+gadlist = {g11ad, g22ad,g33ad}
 gexactlist = {g11exact, g22exact, g33exact}
 
 
@@ -185,24 +226,37 @@ print("dx = %g",dx)
 
 --print(string.format("L2 Error for cells = %d  %g\n", cells[1], l2diff(g11, g11exact)))
 local errors = {}
+local errorsad = {}
 for i =1,3 do
    errors[i] = l2diff(glist[i], gexactlist[i])
-   print(string.format("L2 Error for cells = %d  %g\n", cells[1], l2diff(glist[i], gexactlist[i])))
+   errorsad[i] = l2diff(gadlist[i], gexactlist[i])
+   print(string.format("L2 Error from recovery method for cells = %d  %g\n", cells[1], l2diff(glist[i], gexactlist[i])))
+   print(string.format("L2 Error from AD method for cells = %d  %g\n", cells[1], l2diff(gadlist[i], gexactlist[i])))
 end
 
 
 
-g11:write('g11.bp',0,0, false)
-g22:write('g22.bp',0,0, false)
-g33:write('g33.bp',0,0, false)
-g11exact:write('g11exact.bp',0,0, false)
-g22exact:write('g22exact.bp',0,0, false)
-g33exact:write('g33exact.bp',0,0, false)
+--g11:write('g11.bp',0,0, false)
+--g22:write('g22.bp',0,0, false)
+--g33:write('g33.bp',0,0, false)
+--g11ad:write('g11ad.bp',0,0, false)
+--g22ad:write('g22ad.bp',0,0, false)
+--g33ad:write('g33ad.bp',0,0, false)
+--g11exact:write('g11exact.bp',0,0, false)
+--g22exact:write('g22exact.bp',0,0, false)
+--g33exact:write('g33exact.bp',0,0, false)
 
 file = io.open(string.format("allcell.csv"),"a")
 file:write(string.format("%d,",cells[1]))
 for i =1,3 do
   file:write(string.format("%g,",errors[i]) )
+end
+file:write(string.format("\n"))
+
+file = io.open(string.format("allcellad.csv"),"a")
+file:write(string.format("%d,",cells[1]))
+for i =1,3 do
+  file:write(string.format("%g,",errorsad[i]) )
 end
 file:write(string.format("\n"))
 

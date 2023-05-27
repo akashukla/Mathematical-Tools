@@ -3,6 +3,8 @@ export gComDir="/home/akash/g0g2/gkylsoft/gkyl/bin/"
 
 
 rm allcell.csv
+rm allcellad.csv
+
 for n in 4 8 16 32
 do
   x=$n
